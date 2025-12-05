@@ -15,8 +15,8 @@ RUN apk add --no-cache \
 # Copiar archivos de dependencias
 COPY package*.json ./
 
-# Instalar solo dependencias de producción
-RUN npm install --production && npm cache clean --force
+# Instalar todas las dependencias (incluyendo sequelize-cli para migraciones)
+RUN npm install && npm cache clean --force
 
 # ============================================
 # STAGE 2: Production Image
@@ -29,7 +29,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# Instalar solo el cliente de PostgreSQL (necesario para healthcheck)
+# Instalar solo el cliente de PostgreSQL (necesario para healthcheck y entrypoint)
 RUN apk add --no-cache postgresql-client
 
 # Crear usuario no-root para mayor seguridad
@@ -42,6 +42,10 @@ COPY --from=dependencies --chown=nodejs:nodejs /app/node_modules ./node_modules
 # Copiar el código fuente de la aplicación
 COPY --chown=nodejs:nodejs . .
 
+# Copiar y hacer ejecutable el entrypoint
+COPY --chown=nodejs:nodejs scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Cambiar al usuario no-root
 USER nodejs
 
@@ -52,5 +56,6 @@ EXPOSE 3003
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3003/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Comando de inicio
-CMD ["node", "src/index.js"]
+# Usar entrypoint que ejecuta migraciones
+CMD ["./entrypoint.sh"]
+
