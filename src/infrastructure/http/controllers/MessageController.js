@@ -180,24 +180,29 @@ class MessageController {
         // Obtener todos los miembros del grupo excepto el emisor
         const groupMembers = await this.groupMemberRepository.findByGroupId(internalGroupId);
 
-        groupMembers.forEach(member => {
-          // No notificar al emisor
-          if (member.profileId !== senderProfileId) {
-            rabbitMQPublisher.publishEvent(
-              'MESSAGE_RECEIVED',
-              {
-                messageId: message.id,
-                senderUserId: senderProfileId,
-                recipientUserId: member.profileId,
-                conversationId: null,
-                groupId: groupId, // External ID para deep links
-                messagePreview: content.substring(0, 50),
-                senderUsername: req.user.username || 'Usuario'
-              },
-              'messaging.message.received'
-            );
-          }
-        });
+        // Safety check: ensure groupMembers is an array before iterating
+        if (groupMembers && Array.isArray(groupMembers)) {
+          groupMembers.forEach(member => {
+            // No notificar al emisor
+            if (member.profileId !== senderProfileId) {
+              rabbitMQPublisher.publishEvent(
+                'MESSAGE_RECEIVED',
+                {
+                  messageId: message.id,
+                  senderUserId: senderProfileId,
+                  recipientUserId: member.profileId,
+                  conversationId: null,
+                  groupId: groupId, // External ID para deep links
+                  messagePreview: content.substring(0, 50),
+                  senderUsername: req.user.username || 'Usuario'
+                },
+                'messaging.message.received'
+              );
+            }
+          });
+        } else {
+          console.log('⚠️ No se pudieron obtener miembros del grupo para notificaciones');
+        }
 
         console.log('✅ Mensaje de grupo creado');
 
