@@ -5,6 +5,7 @@
 const { MessageRepository, GroupMemberRepository, GroupRepository } = require('../../repositories');
 const { AppError } = require('../middlewares');
 const { validationResult } = require('express-validator');
+const rabbitMQPublisher = require('../../messaging/RabbitMQPublisher');
 
 class MessageController {
   constructor() {
@@ -44,7 +45,7 @@ class MessageController {
   getByGroup = async (req, res, next) => {
     try {
       console.log('\n📥 GET MESSAGES BY GROUP');
-      
+
       const { groupId } = req.params; // Este es el externalId (communityId)
       const { page = 1, limit = 50 } = req.query;
       const profileId = req.user.profileId;
@@ -55,7 +56,7 @@ class MessageController {
       // 🔥 BUSCAR EL GRUPO POR EXTERNAL_ID
       console.log('🔍 Buscando grupo por external_id...');
       const group = await this.groupRepository.findByExternalId(groupId);
-      
+
       if (!group) {
         console.log('❌ Grupo no encontrado');
         throw new AppError('Grupo no encontrado', 404, 'GROUP_NOT_FOUND');
@@ -68,7 +69,7 @@ class MessageController {
       // Verificar membresía usando el ID interno
       console.log('🔍 Verificando membresía...');
       const isMember = await this.groupMemberRepository.isMember(internalGroupId, profileId);
-      
+
       if (!isMember) {
         console.log('❌ Usuario no es miembro del grupo');
         throw new AppError('No eres miembro', 403, 'NOT_A_MEMBER');
@@ -145,10 +146,10 @@ class MessageController {
       // Si es mensaje de grupo, verificar membresía con external_id
       if (groupId) {
         console.log('🔍 Verificando membresía en grupo...');
-        
+
         // 🔥 BUSCAR GRUPO POR EXTERNAL_ID
         const group = await this.groupRepository.findByExternalId(groupId);
-        
+
         if (!group) {
           throw new AppError('Grupo no encontrado', 404, 'GROUP_NOT_FOUND');
         }
@@ -157,7 +158,7 @@ class MessageController {
         console.log(`✅ Grupo encontrado: ${group.name} (ID interno: ${internalGroupId})`);
 
         const isMember = await this.groupMemberRepository.isMember(internalGroupId, senderProfileId);
-        
+
         if (!isMember) {
           throw new AppError('No eres miembro del grupo', 403, 'NOT_A_MEMBER');
         }
@@ -174,6 +175,29 @@ class MessageController {
 
         // Incrementar contadores de no leídos
         await this.groupMemberRepository.incrementUnreadForAll(internalGroupId, senderProfileId);
+
+        // 📤 Publicar evento MESSAGE_RECEIVED a RabbitMQ
+        // Obtener todos los miembros del grupo excepto el emisor
+        const groupMembers = await this.groupMemberRepository.findByGroupId(internalGroupId);
+
+        groupMembers.forEach(member => {
+          // No notificar al emisor
+          if (member.profileId !== senderProfileId) {
+            rabbitMQPublisher.publishEvent(
+              'MESSAGE_RECEIVED',
+              {
+                messageId: message.id,
+                senderUserId: senderProfileId,
+                recipientUserId: member.profileId,
+                conversationId: null,
+                groupId: groupId, // External ID para deep links
+                messagePreview: content.substring(0, 50),
+                senderUsername: req.user.username || 'Usuario'
+              },
+              'messaging.message.received'
+            );
+          }
+        });
 
         console.log('✅ Mensaje de grupo creado');
 
@@ -298,7 +322,7 @@ class MessageController {
       } else if (groupId) {
         // 🔥 BUSCAR GRUPO POR EXTERNAL_ID
         const group = await this.groupRepository.findByExternalId(groupId);
-        
+
         if (!group) {
           throw new AppError('Grupo no encontrado', 404, 'GROUP_NOT_FOUND');
         }
@@ -306,7 +330,7 @@ class MessageController {
         const internalGroupId = group.id;
 
         const membership = await this.groupMemberRepository.findMembership(internalGroupId, profileId);
-        
+
         if (!membership) {
           throw new AppError('No eres miembro del grupo', 403, 'NOT_A_MEMBER');
         }

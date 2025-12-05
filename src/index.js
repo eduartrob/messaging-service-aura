@@ -9,6 +9,7 @@ const http = require('http');
 const createServer = require('./infrastructure/http/server');
 const { testConnection, syncDatabase } = require('./infrastructure/database/connection');
 const { initializeWebSocket } = require('./infrastructure/websocket/socketServer');
+const rabbitMQPublisher = require('./infrastructure/messaging/RabbitMQPublisher');
 
 // Cargar modelos con asociaciones
 require('./infrastructure/database/models');
@@ -22,7 +23,7 @@ const startServer = async () => {
   // Probar conexión a base de datos
   console.log('📦 Conectando a base de datos PostgreSQL...');
   const dbConnected = await testConnection();
-  
+
   if (!dbConnected) {
     console.error('❌ No se pudo conectar a la base de datos. Abortando...');
     process.exit(1);
@@ -32,6 +33,15 @@ const startServer = async () => {
   if (process.env.NODE_ENV === 'development') {
     console.log('🔄 Sincronizando modelos de base de datos...');
     await syncDatabase(false);
+  }
+
+  // Inicializar RabbitMQ
+  try {
+    console.log('🐰 Inicializando RabbitMQ...');
+    await rabbitMQPublisher.connect();
+  } catch (error) {
+    console.error('❌ Error al conectar con RabbitMQ:', error);
+    console.warn('⚠️ La aplicación continuará sin notificaciones push');
   }
 
   // Crear servidor Express
