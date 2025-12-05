@@ -25,7 +25,7 @@ FROM node:20-alpine AS production
 
 # Variables de entorno de producción
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=3003
 
 WORKDIR /app
 
@@ -46,11 +46,11 @@ COPY --chown=nodejs:nodejs . .
 USER nodejs
 
 # Exponer el puerto de la aplicación
-EXPOSE 3001
+EXPOSE 3003
 
 # Healthcheck para verificar que el servicio está funcionando
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3001/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+    CMD node -e "require('http').get('http://localhost:3003/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Comando de inicio
 CMD ["node", "src/index.js"]
