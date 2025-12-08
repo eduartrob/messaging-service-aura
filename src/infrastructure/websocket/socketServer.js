@@ -28,18 +28,27 @@ class WebSocketServer {
         const token = socket.handshake.auth.token || socket.handshake.query.token;
 
         if (!token) {
+          console.log('❌ WebSocket: No token provided');
           return next(new Error('Token requerido'));
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('🔑 WebSocket Auth - Token decoded:', JSON.stringify(decoded));
+
+        // Try multiple possible field names for profileId
+        const profileId = decoded.profileId || decoded.profile_id || decoded.userId || decoded.id;
+
         socket.user = {
           id: decoded.id,
-          profileId: decoded.profileId || decoded.profile_id,
-          username: decoded.username
+          profileId: profileId,
+          username: decoded.username || decoded.email
         };
+
+        console.log(`✅ WebSocket Auth - User: ${socket.user.profileId}`);
 
         next();
       } catch (error) {
+        console.log(`❌ WebSocket Auth Error: ${error.message}`);
         next(new Error('Token inválido'));
       }
     });
