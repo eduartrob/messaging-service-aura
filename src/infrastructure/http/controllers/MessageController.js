@@ -2,16 +2,18 @@
  * Controller: MessageController
  */
 
-const { MessageRepository, GroupMemberRepository, GroupRepository } = require('../../repositories');
+const { MessageRepository, GroupMemberRepository, GroupRepository, ConversationRepository } = require('../../repositories');
 const { AppError } = require('../middlewares');
 const { validationResult } = require('express-validator');
 const rabbitMQPublisher = require('../../messaging/RabbitMQPublisher');
+const { getWebSocketServer } = require('../../websocket/socketServer');
 
 class MessageController {
   constructor() {
     this.messageRepository = new MessageRepository();
     this.groupMemberRepository = new GroupMemberRepository();
     this.groupRepository = new GroupRepository();
+    this.conversationRepository = new ConversationRepository();
   }
 
   // Obtener mensajes de una conversación 1-a-1
@@ -204,6 +206,13 @@ class MessageController {
           console.log('⚠️ No se pudieron obtener miembros del grupo para notificaciones');
         }
 
+        // 🔥 EMIT WebSocket event for real-time delivery to group
+        const wsServer = getWebSocketServer();
+        if (wsServer) {
+          wsServer.emitNewGroupMessage(internalGroupId, message.toJSON());
+          console.log('📡 WebSocket: Mensaje emitido a grupo:', internalGroupId);
+        }
+
         console.log('✅ Mensaje de grupo creado');
 
         res.status(201).json({
@@ -214,8 +223,6 @@ class MessageController {
 
       } else {
         // Mensaje de conversación 1-a-1
-        // TODO: Verificar que el usuario sea parte de la conversación
-
         const message = await this.messageRepository.create({
           conversationId,
           senderProfileId,
@@ -226,6 +233,37 @@ class MessageController {
         });
 
         console.log('✅ Mensaje de conversación creado');
+
+        // 🔥 EMIT WebSocket event for real-time delivery
+        const wsServer = getWebSocketServer();
+        if (wsServer) {
+          wsServer.emitNewConversationMessage(conversationId, message.toJSON());
+          console.log('📡 WebSocket: Mensaje emitido a conversación:', conversationId);
+        }
+
+        // 🔥 Get other participant for push notification
+        const conversation = await this.conversationRepository.findById(conversationId);
+        if (conversation) {
+          const otherProfileId = conversation.participant1ProfileId === senderProfileId
+            ? conversation.participant2ProfileId
+            : conversation.participant1ProfileId;
+
+          // Publish push notification event
+          rabbitMQPublisher.publishEvent(
+            'MESSAGE_RECEIVED',
+            {
+              messageId: message.id,
+              senderUserId: senderProfileId,
+              recipientUserId: otherProfileId,
+              conversationId: conversationId,
+              groupId: null,
+              messagePreview: content.substring(0, 50),
+              senderUsername: req.user.username || 'Usuario'
+            },
+            'messaging.message.received'
+          );
+          console.log('📤 RabbitMQ: Notificación enviada a:', otherProfileId);
+        }
 
         res.status(201).json({
           success: true,

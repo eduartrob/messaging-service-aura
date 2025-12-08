@@ -26,7 +26,7 @@ class WebSocketServer {
     this.io.use(async (socket, next) => {
       try {
         const token = socket.handshake.auth.token || socket.handshake.query.token;
-        
+
         if (!token) {
           return next(new Error('Token requerido'));
         }
@@ -57,8 +57,12 @@ class WebSocketServer {
     this.userRepository.setOnlineStatus(profileId, true);
     this.joinUserGroups(socket, profileId);
 
+    // 🔥 Broadcast online status to all rooms user is part of
+    this.broadcastUserStatus(profileId, true);
+
     socket.on('join_conversation', (conversationId) => {
       socket.join(`conversation:${conversationId}`);
+      console.log(`📥 Usuario ${profileId} unido a conversación: ${conversationId}`);
     });
 
     socket.on('leave_conversation', (conversationId) => {
@@ -87,9 +91,11 @@ class WebSocketServer {
 
     socket.on('disconnect', () => {
       this.removeConnection(profileId, socket.id);
-      
+
       if (!this.connectedUsers.has(profileId) || this.connectedUsers.get(profileId).size === 0) {
         this.userRepository.setOnlineStatus(profileId, false);
+        // 🔥 Broadcast offline status
+        this.broadcastUserStatus(profileId, false);
         console.log(`❌ Usuario desconectado: ${profileId}`);
       }
     });
@@ -142,13 +148,24 @@ class WebSocketServer {
       });
     }
   }
+
+  // 🔥 Broadcast user online status to all connected clients
+  broadcastUserStatus(profileId, isOnline) {
+    this.io.emit('user_status_changed', { profileId, isOnline });
+    console.log(`📡 Status broadcast: ${profileId} -> ${isOnline ? 'online' : 'offline'}`);
+  }
+
+  // Check if user is currently online
+  isUserOnline(profileId) {
+    return this.connectedUsers.has(profileId) && this.connectedUsers.get(profileId).size > 0;
+  }
 }
 
 let wsServerInstance = null;
 
 const initializeWebSocket = (httpServer) => {
   if (!wsServerInstance) {
-    wsServerInstance = new WebSocketServer(httpServer); 
+    wsServerInstance = new WebSocketServer(httpServer);
   }
   return wsServerInstance;
 };
