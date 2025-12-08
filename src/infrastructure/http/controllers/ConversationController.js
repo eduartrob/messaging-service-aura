@@ -51,7 +51,13 @@ class ConversationController {
         throw new AppError('Sin acceso', 403, 'ACCESS_DENIED');
       }
 
-      res.json({ success: true, data: conversation.toJSON() });
+      // Enriquecer con otherParticipant
+      const data = conversation.toJSON();
+      const isParticipant1 = conversation.participant1ProfileId === profileId;
+      data.otherParticipant = isParticipant1 ? conversation.participant2 : conversation.participant1;
+      data.unreadCount = isParticipant1 ? conversation.unreadCount1 : conversation.unreadCount2;
+
+      res.json({ success: true, data });
     } catch (error) {
       next(error);
     }
@@ -77,17 +83,26 @@ class ConversationController {
       }
 
       let conversation = await this.conversationRepository.findByParticipants(myProfileId, participantProfileId);
-      
-      if (conversation) {
-        return res.json({ success: true, data: conversation.toJSON(), isExisting: true });
+      let isExisting = !!conversation;
+
+      if (!conversation) {
+        conversation = await this.conversationRepository.create({
+          participant1ProfileId: myProfileId,
+          participant2ProfileId: participantProfileId
+        });
       }
 
-      conversation = await this.conversationRepository.create({
-        participant1ProfileId: myProfileId,
-        participant2ProfileId: participantProfileId
-      });
+      // Enriquecer con otherParticipant
+      const data = conversation.toJSON();
+      const isParticipant1 = conversation.participant1ProfileId === myProfileId;
+      data.otherParticipant = isParticipant1 ? conversation.participant2 : conversation.participant1;
+      data.unreadCount = isParticipant1 ? conversation.unreadCount1 : conversation.unreadCount2;
 
-      res.status(201).json({ success: true, message: 'Conversación creada', data: conversation.toJSON(), isExisting: false });
+      if (isExisting) {
+        return res.json({ success: true, data, isExisting: true });
+      }
+
+      res.status(201).json({ success: true, message: 'Conversación creada', data, isExisting: false });
     } catch (error) {
       next(error);
     }
@@ -104,7 +119,7 @@ class ConversationController {
       }
 
       const isParticipant1 = conversation.participant1ProfileId === profileId;
-      const updateData = isParticipant1 
+      const updateData = isParticipant1
         ? { participant1Status: 'archived' }
         : { participant2Status: 'archived' };
 
