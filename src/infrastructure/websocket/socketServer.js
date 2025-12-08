@@ -98,23 +98,11 @@ class WebSocketServer {
       socket.to(room).emit('user_typing', { profileId, isTyping: false });
     });
 
-    socket.on('typing', (data) => {
-      const { conversationId, isTyping } = data;
-      socket.to(`conversation:${conversationId}`).emit('user_typing', {
-        profileId,
-        conversationId,
-        isTyping
-      });
-    });
-
-    // 🔥 Allow client to check if a specific user is online
+    // 🔥 Allow clients to check if a specific user is online
     socket.on('check_user_status', (targetProfileId) => {
       const isOnline = this.isUserOnline(targetProfileId);
-      console.log(`🔍 Check status: ${profileId} asks for ${targetProfileId} -> ${isOnline}`);
-      socket.emit('user_status_changed', {
-        profileId: targetProfileId,
-        isOnline: isOnline
-      });
+      console.log(`🔍 User ${profileId} checking status of ${targetProfileId}: ${isOnline}`);
+      socket.emit('user_status_response', { profileId: targetProfileId, isOnline });
     });
 
     socket.on('disconnect', () => {
