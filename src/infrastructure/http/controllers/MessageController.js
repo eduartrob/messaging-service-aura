@@ -7,6 +7,28 @@ const { AppError } = require('../middlewares');
 const { validationResult } = require('express-validator');
 const rabbitMQPublisher = require('../../messaging/RabbitMQPublisher');
 const { getWebSocketServer } = require('../../websocket/socketServer');
+const axios = require('axios');
+
+// 🔥 Helper to get sender display name from social-service
+async function getSenderDisplayName(profileId, authHeader, fallbackUsername) {
+  try {
+    const SOCIAL_SERVICE_URL = process.env.SOCIAL_SERVICE_URL || 'http://social-service:3002';
+    const response = await axios.get(`${SOCIAL_SERVICE_URL}/api/v1/profiles/${profileId}`, {
+      headers: { 'Authorization': authHeader },
+      timeout: 3000 // 3 second timeout
+    });
+
+    if (response.data?.data?.profile?.displayName) {
+      return response.data.data.profile.displayName;
+    }
+    if (response.data?.data?.displayName) {
+      return response.data.data.displayName;
+    }
+  } catch (error) {
+    console.log(`⚠️ Could not get displayName for ${profileId}, using fallback: ${fallbackUsername}`);
+  }
+  return fallbackUsername || 'Usuario';
+}
 
 class MessageController {
   constructor() {
@@ -182,6 +204,13 @@ class MessageController {
         // Obtener todos los miembros del grupo excepto el emisor
         const groupMembers = await this.groupMemberRepository.findByGroupId(internalGroupId);
 
+        // 🔥 Get display name from social-service profile (before loop)
+        const senderDisplayName = await getSenderDisplayName(
+          senderProfileId,
+          req.headers.authorization,
+          req.user.username
+        );
+
         // Safety check: ensure groupMembers is an array before iterating
         if (groupMembers && Array.isArray(groupMembers)) {
           groupMembers.forEach(member => {
@@ -196,7 +225,7 @@ class MessageController {
                   conversationId: null,
                   groupId: groupId, // External ID para deep links
                   messagePreview: content.substring(0, 50),
-                  senderUsername: req.user.username || 'Usuario'
+                  senderUsername: senderDisplayName
                 },
                 'messaging.message.received'
               );
@@ -248,6 +277,13 @@ class MessageController {
             ? conversation.participant2ProfileId
             : conversation.participant1ProfileId;
 
+          // 🔥 Get display name from social-service profile
+          const senderDisplayName = await getSenderDisplayName(
+            senderProfileId,
+            req.headers.authorization,
+            req.user.username
+          );
+
           // Publish push notification event
           rabbitMQPublisher.publishEvent(
             'MESSAGE_RECEIVED',
@@ -258,11 +294,11 @@ class MessageController {
               conversationId: conversationId,
               groupId: null,
               messagePreview: content.substring(0, 50),
-              senderUsername: req.user.username || 'Usuario'
+              senderUsername: senderDisplayName
             },
             'messaging.message.received'
           );
-          console.log('📤 RabbitMQ: Notificación enviada a:', otherProfileId);
+          console.log('📤 RabbitMQ: Notificación enviada a:', otherProfileId, 'from:', senderDisplayName);
         }
 
         res.status(201).json({
