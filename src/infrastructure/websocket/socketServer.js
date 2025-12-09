@@ -12,8 +12,15 @@ class WebSocketServer {
       cors: {
         origin: process.env.WS_CORS_ORIGIN || '*',
         methods: ['GET', 'POST']
-      }
+      },
+      // Heartbeat configuration to prevent disconnections
+      pingTimeout: 60000,     // 60 seconds before considering connection dead
+      pingInterval: 25000,    // Send ping every 25 seconds
+      upgradeTimeout: 30000,  // 30 seconds to complete upgrade
+      transports: ['polling', 'websocket'],
+      allowUpgrades: true
     });
+
 
     this.userRepository = new UserRepository();
     this.groupMemberRepository = new GroupMemberRepository();
@@ -165,11 +172,35 @@ class WebSocketServer {
     }
   }
 
-  // 🔥 Broadcast user online status to all connected clients
+  // 🔥 Broadcast user online status to relevant rooms only (not all clients)
   broadcastUserStatus(profileId, isOnline) {
-    this.io.emit('user_status_changed', { profileId, isOnline });
-    console.log(`📡 Status broadcast: ${profileId} -> ${isOnline ? 'online' : 'offline'}`);
+    const userSockets = this.connectedUsers.get(profileId);
+    if (!userSockets || userSockets.size === 0) {
+      console.log(`📡 Status broadcast skipped: ${profileId} has no active sockets`);
+      return;
+    }
+
+    // Get the first socket to find which rooms this user is in
+    const socketId = [...userSockets][0];
+    const socket = this.io.sockets.sockets.get(socketId);
+
+    if (!socket) {
+      console.log(`📡 Status broadcast skipped: socket ${socketId} not found`);
+      return;
+    }
+
+    // Broadcast to all rooms this socket is in (conversations/groups)
+    let roomCount = 0;
+    socket.rooms.forEach(room => {
+      if (room !== socketId) { // Skip the default room (socket.id)
+        this.io.to(room).emit('user_status_changed', { profileId, isOnline });
+        roomCount++;
+      }
+    });
+
+    console.log(`📡 Status broadcast to ${roomCount} rooms: ${profileId} -> ${isOnline ? 'online' : 'offline'}`);
   }
+
 
   // Check if user is currently online
   isUserOnline(profileId) {
