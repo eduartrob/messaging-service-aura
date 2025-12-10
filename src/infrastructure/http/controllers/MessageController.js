@@ -246,10 +246,11 @@ class MessageController {
         }
 
         // 🔥 EMIT WebSocket event for real-time delivery to group
+        // Use EXTERNAL groupId because that's what clients join with
         const wsServer = getWebSocketServer();
         if (wsServer) {
-          wsServer.emitNewGroupMessage(internalGroupId, message.toJSON());
-          console.log('📡 WebSocket: Mensaje emitido a grupo:', internalGroupId);
+          wsServer.emitNewGroupMessage(groupId, message.toJSON()); // 🔥 Use external groupId
+          console.log('📡 WebSocket: Mensaje emitido a grupo (external):', groupId);
         }
 
         console.log('✅ Mensaje de grupo creado');
