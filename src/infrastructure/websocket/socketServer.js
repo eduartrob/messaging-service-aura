@@ -160,7 +160,9 @@ class WebSocketServer {
   }
 
   emitNewGroupMessage(groupId, message) {
-    this.io.to(`group:${groupId}`).emit('new_message', message);
+    // 🔥 Use 'new_group_message' event so frontend can distinguish from 1-1 messages
+    this.io.to(`group:${groupId}`).emit('new_group_message', message);
+    console.log(`📡 WebSocket: Emitted new_group_message to group:${groupId}`);
   }
 
   emitToUser(profileId, event, data) {
