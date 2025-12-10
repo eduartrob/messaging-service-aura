@@ -206,7 +206,10 @@ class MessageController {
 
         // 📤 Publicar evento MESSAGE_RECEIVED a RabbitMQ
         // Obtener todos los miembros del grupo excepto el emisor
-        const groupMembers = await this.groupMemberRepository.findByGroupId(internalGroupId);
+        const groupMembersResult = await this.groupMemberRepository.findByGroupId(internalGroupId);
+        const groupMembers = groupMembersResult?.data || []; // 🔥 Extract data array from paginated result
+
+        console.log(`📋 Miembros del grupo encontrados: ${groupMembers.length}`);
 
         // 🔥 Get profile info (displayName + avatarUrl) from social-service (before loop)
         const senderProfile = await getSenderProfile(
@@ -216,10 +219,12 @@ class MessageController {
         );
 
         // Safety check: ensure groupMembers is an array before iterating
-        if (groupMembers && Array.isArray(groupMembers)) {
+        if (groupMembers && Array.isArray(groupMembers) && groupMembers.length > 0) {
+          console.log(`📤 Enviando notificaciones a ${groupMembers.length} miembros`);
           groupMembers.forEach(member => {
             // No notificar al emisor
             if (member.profileId !== senderProfileId) {
+              console.log(`   → Notificando a: ${member.profileId}`);
               rabbitMQPublisher.publishEvent(
                 'MESSAGE_RECEIVED',
                 {
