@@ -126,7 +126,13 @@ class GroupController {
       const { id } = req.params;
       const profileId = req.user?.profileId;
 
-      const group = await this.groupRepository.findById(id);
+      // 🔥 Try findById first (internal ID), then fallback to findByExternalId
+      let group = await this.groupRepository.findById(id);
+      if (!group) {
+        // Try by external ID
+        group = await this.groupRepository.findByExternalId(id);
+      }
+
       if (!group) {
         throw new AppError('Grupo no encontrado', 404, 'GROUP_NOT_FOUND');
       }
@@ -134,7 +140,7 @@ class GroupController {
       const data = group.toJSON();
 
       if (profileId) {
-        const membership = await this.groupMemberRepository.findMembership(id, profileId);
+        const membership = await this.groupMemberRepository.findMembership(group.id, profileId);
         data.isMember = !!membership;
         data.myRole = membership?.role;
       }
@@ -297,7 +303,7 @@ class GroupController {
       next(error);
     }
   };
-getMembers = async (req, res, next) => {
+  getMembers = async (req, res, next) => {
     try {
       const { id } = req.params;
       const { page = 1, limit = 50 } = req.query;
@@ -319,92 +325,92 @@ getMembers = async (req, res, next) => {
     }
   };
 
- syncGroup = async (req, res, next) => {
-  try {
-    console.log('\n🔥🔥🔥 SYNC GROUP ENDPOINT LLAMADO 🔥🔥🔥');
-    console.log('📦 Body recibido:', JSON.stringify(req.body, null, 2));
-    console.log('📋 Headers:', req.headers);
+  syncGroup = async (req, res, next) => {
+    try {
+      console.log('\n🔥🔥🔥 SYNC GROUP ENDPOINT LLAMADO 🔥🔥🔥');
+      console.log('📦 Body recibido:', JSON.stringify(req.body, null, 2));
+      console.log('📋 Headers:', req.headers);
 
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      console.log('❌ Validation errors:', errors.array());
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        console.log('❌ Validation errors:', errors.array());
+        return res.status(400).json({
+          success: false,
+          errors: errors.array()
+        });
+      }
+
+      const {
+        externalId,
+        name,
+        description,
+        imageUrl,
+        groupType = 'community',
+        maxMembers = 500,
+        isPublic = true,
+        creatorProfileId
+      } = req.body;
+
+      console.log(`📥 Sincronizando grupo: ${name} (externalId: ${externalId})`);
+      console.log(`👤 Creador: ${creatorProfileId}`);
+
+      // Verificar si ya existe
+      console.log(`🔍 Buscando grupo existente con externalId: ${externalId}`);
+      const existingGroup = await this.groupRepository.findByExternalId(externalId);
+
+      if (existingGroup) {
+        console.log(`ℹ️ Grupo ${externalId} ya existe en BD`);
+        console.log(`📌 ID interno: ${existingGroup.id}`);
+        return res.status(200).json({
+          success: true,
+          message: 'Grupo ya existe',
+          data: existingGroup.toJSON()
+        });
+      }
+
+      // Crear el grupo
+      console.log(`➕ Creando nuevo grupo en BD...`);
+      const group = await this.groupRepository.create({
+        name,
+        description,
+        imageUrl,
+        groupType,
+        externalId,
+        maxMembers,
+        isPublic,
+        creatorProfileId
       });
-    }
 
-    const {
-      externalId,
-      name,
-      description,
-      imageUrl,
-      groupType = 'community',
-      maxMembers = 500,
-      isPublic = true,
-      creatorProfileId
-    } = req.body;
+      console.log(`✅ Grupo creado en BD: ${group.id}`);
 
-    console.log(`📥 Sincronizando grupo: ${name} (externalId: ${externalId})`);
-    console.log(`👤 Creador: ${creatorProfileId}`);
+      // Agregar al creador como owner
+      if (creatorProfileId) {
+        console.log(`➕ Agregando creador como owner...`);
+        await this.groupMemberRepository.create({
+          groupId: group.id,
+          profileId: creatorProfileId,
+          role: 'owner',
+          status: 'active'
+        });
+        await this.groupRepository.incrementMemberCount(group.id);
+        console.log(`✅ Creador agregado como owner`);
+      }
 
-    // Verificar si ya existe
-    console.log(`🔍 Buscando grupo existente con externalId: ${externalId}`);
-    const existingGroup = await this.groupRepository.findByExternalId(externalId);
-    
-    if (existingGroup) {
-      console.log(`ℹ️ Grupo ${externalId} ya existe en BD`);
-      console.log(`📌 ID interno: ${existingGroup.id}`);
-      return res.status(200).json({
+      console.log(`✅✅✅ SYNC GROUP COMPLETADO EXITOSAMENTE ✅✅✅\n`);
+
+      res.status(201).json({
         success: true,
-        message: 'Grupo ya existe',
-        data: existingGroup.toJSON()
+        message: 'Grupo sincronizado exitosamente',
+        data: group.toJSON()
       });
+
+    } catch (error) {
+      console.error('❌❌❌ ERROR EN SYNC GROUP ❌❌❌');
+      console.error('Error:', error);
+      console.error('Stack:', error.stack);
+      next(error);
     }
-
-    // Crear el grupo
-    console.log(`➕ Creando nuevo grupo en BD...`);
-    const group = await this.groupRepository.create({
-      name,
-      description,
-      imageUrl,
-      groupType,
-      externalId,
-      maxMembers,
-      isPublic,
-      creatorProfileId
-    });
-
-    console.log(`✅ Grupo creado en BD: ${group.id}`);
-
-    // Agregar al creador como owner
-    if (creatorProfileId) {
-      console.log(`➕ Agregando creador como owner...`);
-      await this.groupMemberRepository.create({
-        groupId: group.id,
-        profileId: creatorProfileId,
-        role: 'owner',
-        status: 'active'
-      });
-      await this.groupRepository.incrementMemberCount(group.id);
-      console.log(`✅ Creador agregado como owner`);
-    }
-
-    console.log(`✅✅✅ SYNC GROUP COMPLETADO EXITOSAMENTE ✅✅✅\n`);
-
-    res.status(201).json({
-      success: true,
-      message: 'Grupo sincronizado exitosamente',
-      data: group.toJSON()
-    });
-
-  } catch (error) {
-    console.error('❌❌❌ ERROR EN SYNC GROUP ❌❌❌');
-    console.error('Error:', error);
-    console.error('Stack:', error.stack);
-    next(error);
-  }
-};
+  };
 }
 
 module.exports = new GroupController();
