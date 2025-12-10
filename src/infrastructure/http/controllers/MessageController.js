@@ -233,6 +233,7 @@ class MessageController {
                   recipientUserId: member.profileId,
                   conversationId: null,
                   groupId: groupId, // External ID para deep links
+                  groupName: group.name, // 🔥 Add group name for notification title
                   messagePreview: content.substring(0, 50),
                   senderUsername: senderProfile.displayName,
                   senderAvatarUrl: senderProfile.avatarUrl
