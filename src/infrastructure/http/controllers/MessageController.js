@@ -9,8 +9,8 @@ const rabbitMQPublisher = require('../../messaging/RabbitMQPublisher');
 const { getWebSocketServer } = require('../../websocket/socketServer');
 const axios = require('axios');
 
-// 🔥 Helper to get sender display name from social-service
-async function getSenderDisplayName(profileId, authHeader, fallbackUsername) {
+// 🔥 Helper to get sender profile info (displayName + avatarUrl) from social-service
+async function getSenderProfile(profileId, authHeader, fallbackUsername) {
   try {
     const SOCIAL_SERVICE_URL = process.env.SOCIAL_SERVICE_URL || 'http://social-service:3002';
     const response = await axios.get(`${SOCIAL_SERVICE_URL}/api/v1/profiles/${profileId}`, {
@@ -18,16 +18,20 @@ async function getSenderDisplayName(profileId, authHeader, fallbackUsername) {
       timeout: 3000 // 3 second timeout
     });
 
-    if (response.data?.data?.profile?.displayName) {
-      return response.data.data.profile.displayName;
-    }
-    if (response.data?.data?.displayName) {
-      return response.data.data.displayName;
+    const profile = response.data?.data?.profile || response.data?.data;
+    if (profile) {
+      return {
+        displayName: profile.displayName || fallbackUsername || 'Usuario',
+        avatarUrl: profile.avatarUrl || ''
+      };
     }
   } catch (error) {
-    console.log(`⚠️ Could not get displayName for ${profileId}, using fallback: ${fallbackUsername}`);
+    console.log(`⚠️ Could not get profile for ${profileId}, using fallback: ${fallbackUsername}`);
   }
-  return fallbackUsername || 'Usuario';
+  return {
+    displayName: fallbackUsername || 'Usuario',
+    avatarUrl: ''
+  };
 }
 
 class MessageController {
@@ -204,8 +208,8 @@ class MessageController {
         // Obtener todos los miembros del grupo excepto el emisor
         const groupMembers = await this.groupMemberRepository.findByGroupId(internalGroupId);
 
-        // 🔥 Get display name from social-service profile (before loop)
-        const senderDisplayName = await getSenderDisplayName(
+        // 🔥 Get profile info (displayName + avatarUrl) from social-service (before loop)
+        const senderProfile = await getSenderProfile(
           senderProfileId,
           req.headers.authorization,
           req.user.username
@@ -225,7 +229,8 @@ class MessageController {
                   conversationId: null,
                   groupId: groupId, // External ID para deep links
                   messagePreview: content.substring(0, 50),
-                  senderUsername: senderDisplayName
+                  senderUsername: senderProfile.displayName,
+                  senderAvatarUrl: senderProfile.avatarUrl
                 },
                 'messaging.message.received'
               );
@@ -277,8 +282,8 @@ class MessageController {
             ? conversation.participant2ProfileId
             : conversation.participant1ProfileId;
 
-          // 🔥 Get display name from social-service profile
-          const senderDisplayName = await getSenderDisplayName(
+          // 🔥 Get profile info (displayName + avatarUrl) from social-service
+          const senderProfile = await getSenderProfile(
             senderProfileId,
             req.headers.authorization,
             req.user.username
@@ -294,11 +299,12 @@ class MessageController {
               conversationId: conversationId,
               groupId: null,
               messagePreview: content.substring(0, 50),
-              senderUsername: senderDisplayName
+              senderUsername: senderProfile.displayName,
+              senderAvatarUrl: senderProfile.avatarUrl
             },
             'messaging.message.received'
           );
-          console.log('📤 RabbitMQ: Notificación enviada a:', otherProfileId, 'from:', senderDisplayName);
+          console.log('📤 RabbitMQ: Notificación enviada a:', otherProfileId, 'from:', senderProfile.displayName);
         }
 
         res.status(201).json({
