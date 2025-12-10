@@ -249,7 +249,12 @@ class MessageController {
         // Use EXTERNAL groupId because that's what clients join with
         const wsServer = getWebSocketServer();
         if (wsServer) {
-          wsServer.emitNewGroupMessage(groupId, message.toJSON()); // 🔥 Use external groupId
+          // 🔥 Add external groupId to message payload
+          const messagePayload = {
+            ...message.toJSON(),
+            groupId: groupId // Override with external ID
+          };
+          wsServer.emitNewGroupMessage(groupId, messagePayload);
           console.log('📡 WebSocket: Mensaje emitido a grupo (external):', groupId);
         }
 
