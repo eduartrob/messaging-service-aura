@@ -21,10 +21,10 @@ RUN apk add --no-cache \
 # Copiar archivos de dependencias
 COPY package*.json ./
 
-# Instalar todas las dependencias con cache mount
-# NOTE: Removed npm cache clean --force (unnecessary with cache mount)
+# Instalar todas# Install dependencies with BuildKit cache mount
+# Uses cached packages from previous builds when possible
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline
+    npm install
 
 # ============================================
 # STAGE 2: Production Image
