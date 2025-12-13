@@ -1,3 +1,9 @@
+# syntax=docker/dockerfile:1.4
+# ============================================
+# AURA Messaging Service
+# OPTIMIZED: BuildKit cache mounts
+# ============================================
+
 # ============================================
 # STAGE 1: Build Dependencies
 # ============================================
@@ -15,8 +21,10 @@ RUN apk add --no-cache \
 # Copiar archivos de dependencias
 COPY package*.json ./
 
-# Instalar todas las dependencias (incluyendo sequelize-cli para migraciones)
-RUN npm install && npm cache clean --force
+# Instalar todas las dependencias con cache mount
+# NOTE: Removed npm cache clean --force (unnecessary with cache mount)
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline
 
 # ============================================
 # STAGE 2: Production Image
@@ -58,4 +66,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Usar entrypoint que ejecuta migraciones
 CMD ["./entrypoint.sh"]
-
